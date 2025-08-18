@@ -43,6 +43,6 @@ I'm actively looking for:
 ## Installation
 
 ```bash
-git clone https://github.com/HA%ANT/stego-scan.git
+git clone https://github.com/HA5ANT/stego-scan.git
 cd stego-scan
 chmod +x stego-scan.sh
