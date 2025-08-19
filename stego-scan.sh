@@ -68,8 +68,8 @@ FILE="${ARGS[0]}"
 if [[ ! -f "$FILE" ]]; then die "File not found: $FILE"; fi
 
 # Ensure numeric args are integers; fall back to defaults on error
-if ! PREVIEW_LINES=$((PREVIEW_LINES + 0)) 2>/dev/null; then PREVIEW_LINES=30; fi
-if ! EXTRACT_SIZE=$((EXTRACT_SIZE + 0)) 2>/dev/null; then EXTRACT_SIZE=524288; fi
+if [[ ! "$PREVIEW_LINES" =~ ^[0-9]+$ ]]; then PREVIEW_LINES=30; fi
+if [[ ! "$EXTRACT_SIZE" =~ ^[0-9]+$ ]]; then EXTRACT_SIZE=524288; fi
 
 # ------- Check for required tools -------
 REQUIRED=(file strings dd grep awk sed head tail)
@@ -110,7 +110,7 @@ run_quiet(){ # run command and save stdout/stderr to a file; don't exit on failu
 search_and_extract_bin(){
   local label="$1"; local pat="$2"
   mkdir -p "${OUTDIR}/signature_hits"
-  LC_ALL=C grep -aob -- "$pat" "$FILE" 2>/dev/null | while IFS=: read -r bytepos _; do
+  LC_ALL=C grep -aobF -- "$pat" "$FILE" 2>/dev/null | while IFS=: read -r bytepos _; do
     local outf="${OUTDIR}/signature_hits/${label}_${bytepos}.bin"
     dd if="$FILE" bs=1 skip="$bytepos" count="$EXTRACT_SIZE" of="$outf" 2>/dev/null || true
     echo "${label} @ ${bytepos} -> ${outf}" >> "${OUTDIR}/signature_hits.log"
@@ -213,8 +213,8 @@ fi
 # steghide info + extraction attempts (nonfatal)
 if [[ $NOSteghide -eq 0 ]] && command -v steghide >/dev/null 2>&1; then
   info "Checking for steganography with steghide"
-  # Correct use of steghide info
-  run_quiet "$OUTDIR/steghide_info.txt" steghide info -sf "$FILE" || true
+  # Run steghide info non-interactively (explicit empty passphrase)
+  run_quiet "$OUTDIR/steghide_info.txt" steghide info -sf "$FILE" -p "" || true
   mkdir -p "$OUTDIR/steghide"
   if [[ -n "$PASSWORD" ]]; then
     info "Trying steghide extraction with provided password"
@@ -310,7 +310,7 @@ info "Generating Markdown report"
   echo "| Email addresses | ${EMAIL_COUNT} | in strings analysis |"
   echo "| Foremost carved files | ${FOREMOST_COUNT} | in \`foremost/\` |"
   echo "| Signature extracts | ${SIG_HITS_COUNT} | in \`signature_hits/\` |"
-  echo "| Steghide extracted files | ${STEghide_COUNT:-0} | in \`steghide/\` |"
+  echo "| Steghide extracted files | ${STEGHIDE_COUNT:-0} | in \`steghide/\` |"
   echo ""
   echo "## File Information"
   echo '```'
@@ -450,7 +450,7 @@ info "Raw artifacts saved in: $OUTDIR"
 # Offer to open the report if not in quiet mode and running interactively
 if [[ "${QUIET:-0}" -eq 0 ]] && [[ -t 0 ]]; then
   echo
-  read -p "Would you like to view the report now? (y/N) " -n 1 -r
+  read -p "Would you like to view the report now? (y/N) " -n 1 -r || true
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     if command -v glow >/dev/null 2>&1; then
