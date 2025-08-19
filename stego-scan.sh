@@ -55,8 +55,11 @@ BASE="${BNAME%.*}"
 TS="$(date +%Y%m%d_%H%M%S)"
 OUTDIR="extracted_${BASE}_${TS}"
 
-# create OUTDIR first so report can live inside it
-mkdir -p "$OUTDIR"
+# create OUTDIR (fallback to mktemp if mkdir fails)
+if ! mkdir -p -- "$OUTDIR"; then
+  warn "Could not create $OUTDIR, using temp dir"
+  OUTDIR="$(mktemp -d "${TMPDIR:-/tmp}/stegoscan.XXXX")"
+fi
 
 # now set REPORT inside OUTDIR
 REPORT="${OUTDIR}/${BASE}_${TS}.txt"
@@ -64,11 +67,10 @@ REPORT="${OUTDIR}/${BASE}_${TS}.txt"
 # ---------------- Tools list to check ----------------
 REQUIRED_TOOLS=( \
   file exiftool binwalk foremost steghide stegseek \
-  strings xxd ent grep awk sed head tail \
+  strings xxd grep awk sed head tail \
 )
-
-# Optional tools (don't fail but warn)
-OPTIONAL_TOOLS=(identify pngcheck jpeginfo)
+# ent tends to be missing on many systems; treat as optional
+OPTIONAL_TOOLS=(ent identify pngcheck jpeginfo)
 
 MISSING_TOOLS=()
 for t in "${REQUIRED_TOOLS[@]}"; do
@@ -91,47 +93,66 @@ done
     "${PASSWORD:-<none>}" "$AGGRESSIVE" "$NOSteghide" "$QUIET"
 } > "$REPORT"
 
-# helper to optionally print to terminal
+# helper to optionally print to terminal (keeps compatibility)
 term(){ [[ "${QUIET:-0}" -eq 1 ]] || printf "%b\n" "$1"; }
 
 # helper to run and append to report (respects quiet mode)
+# Usage: run_and_log "Label" -- cmd arg1 arg2 ...
 run_and_log(){
   local label="$1"; shift
-  echo -e "\n==== $label ====" >> "$REPORT"
-  if [[ "${QUIET:-0}" -ne 1 ]]; then
-    printf "${BOLD}%s${RESET}\n" "$label"
-  fi
+  if [[ "${1:-}" == "--" ]]; then shift; fi
   if [[ $# -lt 1 ]]; then
     echo "[ERROR] run_and_log called without command" >> "$REPORT"
     return 1
   fi
-  local cmdname="${1%% *}"
-  if ! command -v "$cmdname" >/dev/null 2>&1; then
-    warn "Tool not found: $cmdname"
-    echo "[SKIP] $cmdname not installed" >> "$REPORT"
+  local -a cmd=( "$@" )
+  echo -e "\n==== $label ====" >> "$REPORT"
+  if [[ "${QUIET:-0}" -ne 1 ]]; then
+    printf "${BOLD}%s${RESET}\n" "$label"
+  fi
+  if ! command -v "${cmd[0]}" >/dev/null 2>&1; then
+    warn "Tool not found: ${cmd[0]}"
+    echo "[SKIP] ${cmd[0]} not installed" >> "$REPORT"
     return 1
   fi
   {
-    echo "Command: $*"
-    "$@" 2>&1 || echo "[non-zero exit]"
+    echo "Command: ${cmd[*]}"
+    "${cmd[@]}" 2>&1 || echo "[non-zero exit]"
   } >> "$REPORT"
   return 0
 }
 
+# trap to ensure we print final note on exit
+_cleanup() {
+  exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    warn "Script exited with code $exit_code. Partial results (if any) saved to: $OUTDIR"
+  else
+    ok "Scan complete!"
+    term "$(printf "${CYAN}[*]${RESET} Report: %s" "$REPORT")"
+    term "$(printf "${CYAN}[*]${RESET} Artifacts: %s" "$OUTDIR")"
+  fi
+
+  if (( ${#MISSING_TOOLS[@]} > 0 )); then
+    warn "Missing tools: ${MISSING_TOOLS[*]}"
+  fi
+}
+trap _cleanup EXIT
+
 # ---------------- Basic checks ----------------
 term "$(printf "${CYAN}[*]${RESET} Running basic file checks...")"
-run_and_log "file" file -- "$FILE"
-run_and_log "ls -l" ls -l -- "$FILE"
-run_and_log "sha256sum" sha256sum -- "$FILE"
-run_and_log "md5sum" md5sum -- "$FILE"
+run_and_log "file" -- file -- "$FILE"
+run_and_log "ls -l" -- ls -l -- "$FILE"
+run_and_log "sha256sum" -- sha256sum -- "$FILE"
+run_and_log "md5sum" -- md5sum -- "$FILE"
 
 # ---------------- Metadata ----------------
 term "$(printf "${CYAN}[*]${RESET} Extracting metadata...")"
-run_and_log "exiftool" exiftool "$FILE" || true
+run_and_log "exiftool" -- exiftool "$FILE" || true
 
 # Check for optional tools before running
 if command -v identify >/dev/null; then
-  run_and_log "identify (ImageMagick)" identify -verbose "$FILE" || true
+  run_and_log "identify (ImageMagick)" -- identify -verbose "$FILE" || true
 else
   echo "[SKIP] identify (ImageMagick) not installed" >> "$REPORT"
 fi
@@ -141,8 +162,9 @@ term "$(printf "${CYAN}[*]${RESET} Running binwalk...")"
 if command -v binwalk >/dev/null; then
   BINWALK_SCAN="$OUTDIR/binwalk_scan.txt"
   BINWALK_EXTRACT_LOG="$OUTDIR/binwalk_extract.txt"
-  binwalk "$FILE" > "$BINWALK_SCAN" 2>&1 || true
-  binwalk -e -M --directory "$OUTDIR/binwalk_extracted" "$FILE" > "$BINWALK_EXTRACT_LOG" 2>&1 || true
+  # capture both outputs
+  binwalk -- "$FILE" > "$BINWALK_SCAN" 2>&1 || true
+  binwalk -e -M --directory "$OUTDIR/binwalk_extracted" -- "$FILE" > "$BINWALK_EXTRACT_LOG" 2>&1 || true
   echo "Binwalk full output: $BINWALK_SCAN" >> "$REPORT"
   echo "Binwalk extract log: $BINWALK_EXTRACT_LOG" >> "$REPORT"
   echo -e "\n==== Binwalk preview ====" >> "$REPORT"
@@ -160,7 +182,7 @@ if command -v strings >/dev/null; then
   STRINGS_WORDY="$OUTDIR/strings_wordy.txt"
   STRINGS_BASE64="$OUTDIR/strings_base64_candidates.txt"
   
-  strings -a "$FILE" > "$STRINGS_ALL" || true
+  strings -a -- "$FILE" > "$STRINGS_ALL" || true
   grep -Ea '[[:print:]]{6,}' "$STRINGS_ALL" > "$STRINGS_FILTERED" || true
   grep -Eao '\b[[:alnum:]]{6,}\b' "$STRINGS_ALL" | sort -u > "$STRINGS_WORDY" || true
   grep -Eao '[A-Za-z0-9+/=]{40,}' "$STRINGS_ALL" > "$STRINGS_BASE64" || true
@@ -179,18 +201,22 @@ else
 fi
 
 # ---------------- File Analysis ----------------
-term "$(printf "${CYAN}[*]${RESET} Analyzing file properties...")"
-run_and_log "ent (entropy)" ent "$FILE" || true
+term="$(printf "${CYAN}[*]${RESET} Analyzing file properties...")"
+if command -v ent >/dev/null; then
+  run_and_log "ent (entropy)" -- ent "$FILE" || true
+else
+  echo "[SKIP] ent not installed" >> "$REPORT"
+fi
 
 # Optional file validators
 if command -v pngcheck >/dev/null; then
-  run_and_log "pngcheck" pngcheck -v "$FILE" || true
+  run_and_log "pngcheck" -- pngcheck -v "$FILE" || true
 else
   echo "[SKIP] pngcheck not installed" >> "$REPORT"
 fi
 
 if command -v jpeginfo >/dev/null; then
-  run_and_log "jpeginfo" jpeginfo -c "$FILE" || true
+  run_and_log "jpeginfo" -- jpeginfo -c "$FILE" || true
 else
   echo "[SKIP] jpeginfo not installed" >> "$REPORT"
 fi
@@ -199,8 +225,8 @@ fi
 term "$(printf "${CYAN}[*]${RESET} File carving...")"
 if command -v foremost >/dev/null; then
   FOREMOST_DIR="$OUTDIR/foremost"
-  mkdir -p "$FOREMOST_DIR"
-  run_and_log "foremost" foremost -i "$FILE" -o "$FOREMOST_DIR" || true
+  mkdir -p -- "$FOREMOST_DIR"
+  run_and_log "foremost" -- foremost -i "$FILE" -o "$FOREMOST_DIR" || true
 else
   warn "foremost missing"
   echo "[SKIP] foremost not installed" >> "$REPORT"
@@ -213,13 +239,13 @@ if [[ $NOSteghide -eq 0 ]]; then
     SH_INFO="$(steghide info -sf "$FILE" 2>&1 || true)"
     echo "$SH_INFO" >> "$REPORT"
 
-    if echo "$SH_INFO" | grep -q "embedded data"; then
+    if echo "$SH_INFO" | grep -qi "embedded data"; then
       term "$(printf "${GREEN}[+]${RESET} steghide reports embedded data!")"
       STEGHIDE_DIR="$OUTDIR/steghide"
-      mkdir -p "$STEGHIDE_DIR"
+      mkdir -p -- "$STEGHIDE_DIR"
       
       # Try with password if provided
-      if [[ -n "$PASSWORD" ]]; then
+      if [[ -n "${PASSWORD:-}" ]]; then
         term "$(printf "${CYAN}[*]${RESET} Trying steghide with provided password...")"
         steghide extract -sf "$FILE" -p "$PASSWORD" -xf "$STEGHIDE_DIR/extracted" -f >/dev/null 2>&1 || true
       fi
@@ -245,7 +271,7 @@ if [[ $AGGRESSIVE -eq 1 ]]; then
   if command -v stegseek >/dev/null; then
     term "$(printf "${CYAN}[*]${RESET} Running stegseek...")"
     STEGSEEK_DIR="$OUTDIR/stegseek"
-    mkdir -p "$STEGSEEK_DIR"
+    mkdir -p -- "$STEGSEEK_DIR"
     stegseek "$FILE" "$WORDLIST" "$STEGSEEK_DIR/extracted" > "$STEGSEEK_DIR/stegseek_out.txt" 2>&1 || true
     echo "Stegseek output: $STEGSEEK_DIR/stegseek_out.txt" >> "$REPORT"
     term "$(printf "${YELLOW}[!]${RESET} stegseek completed")"
@@ -255,16 +281,18 @@ if [[ $AGGRESSIVE -eq 1 ]]; then
 fi
 
 # ---------------- Signature Search ----------------
-term "$(printf "${CYAN}[*]${RESET} Searching for embedded signatures...")"
+term="$(printf "${CYAN}[*]${RESET} Searching for embedded signatures...")"
 SIG_HITS_DIR="$OUTDIR/signature_hits"
-mkdir -p "$SIG_HITS_DIR"
-xxd -p "$FILE" | tr -d '\n' > "$OUTDIR/hex_dump.txt" || true
+mkdir -p -- "$SIG_HITS_DIR"
+# Create a single-line hex dump
+xxd -p -- "$FILE" | tr -d '\n' > "$OUTDIR/hex_dump.txt" || true
 
 search_and_extract() {
   local hex="$1" tag="$2"
-  grep -bo "$hex" "$OUTDIR/hex_dump.txt" | while IFS=: read -r pos _; do
-    bytepos=$((pos/2))
-    dd if="$FILE" bs=1 skip="$bytepos" count=1048576 of="$SIG_HITS_DIR/${tag}_${bytepos}.bin" 2>/dev/null
+  # find byte offsets of the hex pattern
+  grep -bo -- "$hex" "$OUTDIR/hex_dump.txt" | while IFS=: read -r pos _; do
+    bytepos=$((pos / 2))
+    dd if="$FILE" bs=1 skip="$bytepos" count=1048576 of="$SIG_HITS_DIR/${tag}_${bytepos}.bin" 2>/dev/null || true
   done
 }
 
@@ -278,17 +306,17 @@ search_and_extract "526172211a070100" "rar5"
 search_and_extract "377abcaf271c" "7z"
 search_and_extract "1f8b08" "gzip"
 
-if [[ -n "$(ls -A "$SIG_HITS_DIR")" ]]; then
+if [[ -n "$(ls -A "$SIG_HITS_DIR" 2>/dev/null || true)" ]]; then
   echo "Found embedded signatures:" >> "$REPORT"
   for f in "$SIG_HITS_DIR"/*; do
-    file "$f" >> "$REPORT"
+    file -- "$f" >> "$REPORT"
   done
 else
   echo "No embedded signatures found" >> "$REPORT"
 fi
 
 # ---------------- Flag Search ----------------
-term "$(printf "${CYAN}[*]${RESET} Searching for flags...")"
+term="$(printf "${CYAN}[*]${RESET} Searching for flags...")"
 if [[ -f "$OUTDIR/strings_all.txt" ]]; then
   FLAGS_FILE="$OUTDIR/possible_flags.txt"
   grep -Eio 'ctf\{[^}]{1,200}\}|flag\{[^}]{1,200}\}|FLAG\{[^}]{1,200}\}' "$OUTDIR/strings_all.txt" > "$FLAGS_FILE" || true
@@ -310,12 +338,5 @@ fi
   du -h --max-depth=1 "$OUTDIR" | sort -h
 } >> "$REPORT"
 
-ok "Scan complete!"
-term "$(printf "${CYAN}[*]${RESET} Report: ${REPORT}")"
-term "$(printf "${CYAN}[*]${RESET} Artifacts: ${OUTDIR}")"
-
-if (( ${#MISSING_TOOLS[@]} > 0 )); then
-  warn "Missing tools: ${MISSING_TOOLS[*]}"
-fi
-
+# Exit normally; trap will print final messages
 exit 0
