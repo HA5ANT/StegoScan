@@ -42,7 +42,7 @@ The project is a single script, no build required.
 
 Linux/macOS:
 ```bash
-git clone https://github.com/yourusername/StegoScan.git
+git clone https://github.com/HA5ANT/StegoScan.git
 cd StegoScan
 chmod +x stego-scan.sh
 ```
