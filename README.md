@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)]()
 [![Beginner Friendly](https://img.shields.io/badge/Level-Beginner-ff69b4)]()
 [![Help Wanted](https://img.shields.io/badge/Help-Wanted-red)]()
+[![TryHackMe Badge](https://tryhackme-badges.s3.amazonaws.com/hasantalal302.png)](https://tryhackme.com/p/hasantalal302)
 
 > Status: This tool is very primitive and still evolving. It works as a quick triage helper, not a full solution. Expect missing checks, rough edges, and false positives. Contributions and feedback are welcome while we build toward the intended version.
 
