@@ -96,7 +96,7 @@ search_and_extract_bin(){
     local outf="${OUTDIR}/signature_hits/${label}_${bytepos}.bin"
     dd if="$FILE" bs=1 skip="$bytepos" count="$EXTRACT_SIZE" of="$outf" 2>/dev/null || true
     echo "${label} @ ${bytepos} -> ${outf}" >> "${OUTDIR}/signature_hits.log"
-  done
+  done || true
 }
 
 # ------- Start scans (raw files saved in OUTDIR) -------
@@ -186,7 +186,7 @@ grep -Eio 'ctf\{[^}]{1,200}\}|flag\{[^}]{1,200}\}|FLAG\{[^}]{1,200}\}' "$OUTDIR/
   PREVIEW_COUNT=$(wc -l < "$OUTDIR/strings_preview.txt" 2>/dev/null || echo 0)
   BASE64_COUNT=$(wc -l < "$OUTDIR/strings_base64.txt" 2>/dev/null || echo 0)
   FOREMOST_COUNT=$(find "$OUTDIR/foremost" -type f 2>/dev/null | wc -l || echo 0)
-  SIG_HITS_COUNT=$(find "$OUTDIR/signature_hits" -type f -maxdepth 1 2>/dev/null | wc -l || echo 0)
+  SIG_HITS_COUNT=$(find "$OUTDIR/signature_hits" -maxdepth 1 -type f 2>/dev/null | wc -l || echo 0)
   STEGHIDE_COUNT=0
   [[ -d "$OUTDIR/steghide" ]] && STEGHIDE_COUNT=$(find "$OUTDIR/steghide" -type f 2>/dev/null | wc -l || echo 0)
   echo "| Item | Count | Notes |"
