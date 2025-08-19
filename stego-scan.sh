@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stego-scan - enhanced stego analysis with comprehensive reporting
+# stego-scan - enhanced stego analysis with comprehensive reporting (patched)
 # Usage: ./stego-scan.sh [options] /path/to/target.jpg
 set -euo pipefail
 IFS=$'\n\t'
@@ -7,7 +7,7 @@ IFS=$'\n\t'
 # ------- Config -------
 PREVIEW_LINES=30
 EXTRACT_SIZE=524288   # bytes to extract at signature offsets (default 512 KiB)
-VERSION="1.3"
+VERSION="1.3-patch1"
 
 # ------- Colors (terminal only) -------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
@@ -35,15 +35,6 @@ Options:
       --debug              Enable debug output
   -q, --quiet              Minimal terminal output
   -h, --help               Show this help
-
-Features:
-  - File metadata extraction
-  - Strings analysis with pattern detection
-  - Binary signature detection and extraction
-  - Steganography tool analysis (steghide, stegseek)
-  - File carving with foremost
-  - Entropy analysis
-  - Comprehensive Markdown reporting
 USG
 }
 
@@ -76,6 +67,10 @@ if [[ ${#ARGS[@]} -lt 1 ]]; then usage; exit 2; fi
 FILE="${ARGS[0]}"
 if [[ ! -f "$FILE" ]]; then die "File not found: $FILE"; fi
 
+# Ensure numeric args are integers; fall back to defaults on error
+if ! PREVIEW_LINES=$((PREVIEW_LINES + 0)) 2>/dev/null; then PREVIEW_LINES=30; fi
+if ! EXTRACT_SIZE=$((EXTRACT_SIZE + 0)) 2>/dev/null; then EXTRACT_SIZE=524288; fi
+
 # ------- Check for required tools -------
 REQUIRED=(file strings dd grep awk sed head tail)
 MISSING=()
@@ -106,11 +101,9 @@ start_time=$(date +%s)
 # ------- Helpers -------
 run_quiet(){ # run command and save stdout/stderr to a file; don't exit on failure
   local out="$1"; shift
-  echo "Running: $*" >> "$out"
-  if [[ "$DEBUG" -eq 1 ]]; then
-    printf "${DIM}[DEBUG] Running: %s${RESET}\n" "$*"
-  fi
-  "$@" >> "$out" 2>&1 || echo "Command exited with status $?" >> "$out"
+  printf "[%s] Running: %s\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$out"
+  [[ "${DEBUG:-0}" -eq 1 ]] && printf "${DIM}[DEBUG] Running: %s${RESET}\n" "$*"
+  "$@" >> "$out" 2>&1 || printf "[%s] Command exited non-zero: %s\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$out"
 }
 
 # binary-safe signature search & extract
@@ -126,9 +119,8 @@ search_and_extract_bin(){
 
 # File type detection for better reporting
 detect_file_type() {
-  local file="$1"
-  local file_output=$(file -b "$file")
-  echo "$file_output"
+  local f="$1"
+  file -b "$f"
 }
 
 # Calculate processing time
@@ -150,17 +142,19 @@ info "Report will be saved as: $REPORT_MD"
 
 # Create a process log
 PROCESS_LOG="${OUTDIR}/process.log"
-echo "Stego Scan v${VERSION} Process Log" > "$PROCESS_LOG"
-echo "Started: $(date)" >> "$PROCESS_LOG"
-echo "Target: $FILE" >> "$PROCESS_LOG"
-echo "Arguments: ${ARGS[*]}" >> "$PROCESS_LOG"
+{
+  echo "Stego Scan v${VERSION} Process Log"
+  echo "Started: $(date)"
+  echo "Target: $FILE"
+  echo "Args: ${ARGS[*]}"
+} > "$PROCESS_LOG"
 
 # basic info
 info "Collecting basic file information"
 run_quiet "$OUTDIR/file.txt" file -- "$FILE"
 run_quiet "$OUTDIR/ls.txt" ls -l -- "$FILE"
-run_quiet "$OUTDIR/sha256.txt" sha256sum -- "$FILE"
-run_quiet "$OUTDIR/md5.txt" md5sum -- "$FILE"
+run_quiet "$OUTDIR/sha256.txt" sha256sum -- "$FILE" || true
+run_quiet "$OUTDIR/md5.txt" md5sum -- "$FILE" || true
 
 # metadata (optional)
 if command -v exiftool >/dev/null 2>&1; then
@@ -188,18 +182,16 @@ fi
 # strings (all / preview / base64)
 info "Extracting and analyzing strings"
 run_quiet "$OUTDIR/strings_all.txt" strings -a "$FILE"
-# Improved string filtering
-run_quiet "$OUTDIR/strings_ascii.txt" strings -a -t d "$FILE"  # ASCII strings with offsets
-run_quiet "$OUTDIR/strings_unicode.txt" strings -a -el "$FILE"  # Unicode strings
+# ASCII/unicode variants (optional)
+run_quiet "$OUTDIR/strings_ascii.txt" strings -a -t d "$FILE" || true
+run_quiet "$OUTDIR/strings_unicode.txt" strings -a -el "$FILE" || true
 
-# Enhanced string analysis
+# Improved string filtering
 grep -E --color=never '[[:print:]]{6,}' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_preview.txt" 2>/dev/null || true
 grep -Eao '[A-Za-z0-9+/=]{40,}' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_base64.txt" 2>/dev/null || true
-
-# Additional string analysis: URLs, emails, etc.
 grep -Eo '(http|https|ftp)://[^/"]+' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_urls.txt" 2>/dev/null || true
 grep -Eio '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_emails.txt" 2>/dev/null || true
-grep -Eio '(0x)?[0-9a-fA-F]{8,}' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_hex.txt" 2>/dev/null || true  # Hex strings
+grep -Eio '(0x)?[0-9a-fA-F]{8,}' "$OUTDIR/strings_all.txt" > "$OUTDIR/strings_hex.txt" 2>/dev/null || true
 
 # entropy if available
 if command -v ent >/dev/null 2>&1; then
@@ -218,18 +210,18 @@ else
   info "foremost not found, skipping file carving"
 fi
 
-# steghide info + extraction attempts (nonfatal) - FIXED COMMAND SYNTAX
+# steghide info + extraction attempts (nonfatal)
 if [[ $NOSteghide -eq 0 ]] && command -v steghide >/dev/null 2>&1; then
   info "Checking for steganography with steghide"
-  # Fixed command syntax - removed -sf flag which was causing the error
-  run_quiet "$OUTDIR/steghide_info.txt" steghide info "$FILE"
+  # Correct use of steghide info
+  run_quiet "$OUTDIR/steghide_info.txt" steghide info -sf "$FILE" || true
   mkdir -p "$OUTDIR/steghide"
   if [[ -n "$PASSWORD" ]]; then
     info "Trying steghide extraction with provided password"
-    run_quiet "$OUTDIR/steghide_extract_pass.log" steghide extract -sf "$FILE" -p "$PASSWORD" -xf "$OUTDIR/steghide/extracted" -f
+    run_quiet "$OUTDIR/steghide_extract_pass.log" steghide extract -sf "$FILE" -p "$PASSWORD" -xf "$OUTDIR/steghide/extracted" -f || true
   fi
   info "Trying steghide extraction with empty password"
-  run_quiet "$OUTDIR/steghide_extract_empty.log" steghide extract -sf "$FILE" -p "" -xf "$OUTDIR/steghide/extracted_empty" -f
+  run_quiet "$OUTDIR/steghide_extract_empty.log" steghide extract -sf "$FILE" -p "" -xf "$OUTDIR/steghide/extracted_empty" -f || true
 else
   info "steghide skipped or not available"
 fi
@@ -246,17 +238,17 @@ if [[ $AGGRESSIVE -eq 1 ]]; then
   fi
 fi
 
-# Additional stego tools if available
+# zsteg/stegdetect if available
 if command -v zsteg >/dev/null 2>&1; then
   info "Running zsteg analysis for PNG/BMP steganography"
   mkdir -p "$OUTDIR/zsteg"
-  run_quiet "$OUTDIR/zsteg.txt" zsteg -a "$FILE"
+  run_quiet "$OUTDIR/zsteg.txt" zsteg -a "$FILE" || true
 fi
 
 if command -v stegdetect >/dev/null 2>&1; then
   info "Running stegdetect analysis"
   mkdir -p "$OUTDIR/stegdetect"
-  run_quiet "$OUTDIR/stegdetect.txt" stegdetect "$FILE"
+  run_quiet "$OUTDIR/stegdetect.txt" stegdetect "$FILE" || true
 fi
 
 # signature search (common types)
@@ -318,7 +310,7 @@ info "Generating Markdown report"
   echo "| Email addresses | ${EMAIL_COUNT} | in strings analysis |"
   echo "| Foremost carved files | ${FOREMOST_COUNT} | in \`foremost/\` |"
   echo "| Signature extracts | ${SIG_HITS_COUNT} | in \`signature_hits/\` |"
-  echo "| Steghide extracted files | ${STEGHIDE_COUNT} | in \`steghide/\` |"
+  echo "| Steghide extracted files | ${STEghide_COUNT:-0} | in \`steghide/\` |"
   echo ""
   echo "## File Information"
   echo '```'
@@ -411,7 +403,6 @@ info "Generating Markdown report"
   if [[ -f "$OUTDIR/steghide_info.txt" ]]; then
     echo "### Steghide Info"
     echo '```'
-    # Filter out error messages and show only relevant info
     grep -v "unknown argument" "$OUTDIR/steghide_info.txt" | head -n 10 || true
     echo '```'
     if [[ -d "$OUTDIR/steghide" ]] && [[ "$(find "$OUTDIR/steghide" -type f 2>/dev/null | wc -l)" -gt 0 ]]; then
@@ -423,7 +414,6 @@ info "Generating Markdown report"
     echo "_steghide not run or not installed_"
   fi
   echo ""
-  # Additional stego tools results
   if [[ -f "$OUTDIR/zsteg.txt" ]]; then
     echo "### Zsteg Analysis"
     echo '```'
@@ -444,21 +434,22 @@ info "Generating Markdown report"
   echo "- If steghide indicated embedded data, try small targeted wordlists before full brute-force."
   echo "- Examine extracted signature hits for hidden content."
   echo "- Check URLs and email addresses for potential leads."
-  echo "- High entropy (7.95) suggests possible encrypted content - consider brute-force approaches."
   echo ""
   echo "---"
-  echo "*Report generated by [Stego Scan v${VERSION}](https://github.com/yourusername/stego-scan)*  "
+  echo "*Report generated by Stego Scan v${VERSION}*  "
   echo "*Raw artifacts & full logs are in* \`$OUTDIR\`  "
 } > "$REPORT_MD"
 
 # Final output
+end_time=$(date +%s)
+processing_time=$((end_time - start_time))
 ok "Scan completed in $(format_duration $processing_time)"
 info "Markdown report saved: $REPORT_MD"
 info "Raw artifacts saved in: $OUTDIR"
 
-# Offer to open the report if not in quiet mode
-if [[ "${QUIET:-0}" -eq 0 ]]; then
-  echo ""
+# Offer to open the report if not in quiet mode and running interactively
+if [[ "${QUIET:-0}" -eq 0 ]] && [[ -t 0 ]]; then
+  echo
   read -p "Would you like to view the report now? (y/N) " -n 1 -r
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
