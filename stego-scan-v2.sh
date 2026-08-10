@@ -81,7 +81,7 @@ parse_args() {
   done
 
   [[ -z "$TARGET_FILE" ]] && { usage; exit 2; }
-  [[ ! -f "$TARGET_FILE" ]] && log_die "File not found: $TARGET_FILE"
+  if [[ ! -f "$TARGET_FILE" ]]; then echo "DEBUG: TARGET_FILE is $TARGET_FILE"; ls -l "$TARGET_FILE"; log_die "File not found: $TARGET_FILE"; fi
 }
 
 setup_environment() {
