@@ -172,7 +172,9 @@ def options_from_args(args: argparse.Namespace) -> Options:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    printer = Printer(sys.stderr, quiet=args.quiet, color=False if args.no_color else None)
+    # Results go to stdout so they can be piped or redirected; progress and
+    # diagnostics go to stderr.
+    printer = Printer(sys.stdout, quiet=args.quiet, color=False if args.no_color else None)
 
     if args.list_analyzers:
         _print_analyzers()

@@ -10,10 +10,14 @@ from .base import ExternalAnalyzer
 
 _FLAGGY = re.compile(r"(?:flag|ctf|htb|thm|pico)\{", re.IGNORECASE)
 
-# zsteg prints one line per channel/bit combination as `<spec> .. <result>`.
-# The separator is part of every line, so filtering has to look at the result.
-_SEPARATOR = re.compile(r"\s\.\.\s")
-_EMPTY_RESULT = re.compile(r'^(?:nothing|text:\s*"[\s\x00.]*"|\[NUL\].*|file:\s*empty)$', re.IGNORECASE)
+# zsteg prints one line per channel/bit combination as `<spec> .. <result>`,
+# and for most combinations the result is empty. The separator appears on every
+# line -- including the empty ones, where nothing follows it -- so the filter
+# has to split on it and judge what came after.
+_SEPARATOR = re.compile(r"\s\.\.\s?")
+_EMPTY_RESULT = re.compile(
+    r'^(?:nothing|text:\s*"[\s\x00.]*"|\[NUL\].*|file:\s*empty)$', re.IGNORECASE
+)
 
 MAX_LINES = 20
 
@@ -40,7 +44,9 @@ class ZstegAnalyzer(ExternalAnalyzer):
             if not stripped:
                 continue
             parts = _SEPARATOR.split(stripped, 1)
-            result_part = parts[1].strip() if len(parts) == 2 else stripped
+            if len(parts) != 2:
+                continue  # not a result line (banner, warning, blank)
+            result_part = parts[1].strip()
             if not result_part or _EMPTY_RESULT.match(result_part):
                 continue
             interesting += 1

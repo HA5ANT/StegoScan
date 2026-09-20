@@ -260,3 +260,40 @@ def test_stegdetect_positive_stays_possible(clean_jpeg, tmp_path, stub_run):
     result = StegdetectAnalyzer().run(evidence, ctx)
     assert result.findings[0].confidence is Confidence.POSSIBLE
     assert "false positives" in result.findings[0].detail
+
+
+# --- false-positive regressions ---------------------------------------------
+
+
+def test_zsteg_empty_result_lines_are_all_discarded(tmp_path, stub_run):
+    """Regression: the `..` separator ends the line when there is no result.
+
+    zsteg emits one line per bit-plane combination and most are empty. An
+    earlier filter matched on the separator itself, so every line survived and
+    a clean PNG came back SUSPICIOUS on volume alone.
+    """
+    noise = b"".join(
+        "b{},{},{},xy         ..\n".format(bit, channel, order).encode()
+        for bit in (1, 2)
+        for channel in ("r", "g", "b", "rgb", "bgr")
+        for order in ("lsb", "msb")
+    )
+    stub_run(stdout=noise)
+    path = write(tmp_path, "c.png", make_png())
+    evidence, ctx = make_ctx(path, tmp_path)
+    result = ZstegAnalyzer().run(evidence, ctx)
+    assert result.findings == []
+    assert result.detail == "0 interesting lines"
+
+
+def test_binwalk_ignores_compression_inherent_to_the_container(tmp_path, stub_run):
+    """A PNG is zlib streams by definition; reporting them is noise."""
+    stub_run(
+        stdout=b"DECIMAL       HEXADECIMAL     DESCRIPTION\n"
+        b"0             0x0             PNG image, 1 x 1, 8-bit/color RGB\n"
+        b"41            0x29            Zlib compressed data, default compression\n"
+    )
+    path = write(tmp_path, "c.png", make_png())
+    evidence, ctx = make_ctx(path, tmp_path)
+    result = BinwalkAnalyzer().run(evidence, ctx)
+    assert result.findings == []

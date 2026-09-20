@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from ...model import Confidence, Severity
+from ...model import Carrier, Confidence, Severity
 from ...registry import register
 from .base import ExternalAnalyzer
 
@@ -17,6 +17,15 @@ _ROW = re.compile(r"^(\d+)\s+(0x[0-9A-Fa-f]+)\s+(.+?)\s*$")
 
 # Descriptions that appear for almost every image and carry no signal.
 _UNINTERESTING = ("jfif standard", "exif standard", "tiff image data", "xml document")
+
+# Compression that *is* the container: a PNG is zlib streams by definition, so
+# reporting them as embedded data is noise, not a finding.
+_INHERENT = {
+    Carrier.PNG: ("zlib compressed", "deflate"),
+    Carrier.ZIP: ("zlib compressed", "deflate", "zip archive data"),
+    Carrier.PDF: ("zlib compressed", "deflate"),
+    Carrier.GIF: ("lzw",),
+}
 
 
 @register
@@ -33,6 +42,7 @@ class BinwalkAnalyzer(ExternalAnalyzer):
 
         artifact = self.save_output(ctx, run, "binwalk.txt")
         known = {hit.offset for hit in ctx.index.hits if hit.validated}
+        inherent = _INHERENT.get(evidence.carrier, ())
 
         findings = []
         rows = 0
@@ -45,8 +55,11 @@ class BinwalkAnalyzer(ExternalAnalyzer):
             rows += 1
             if offset == 0:
                 continue  # the carrier's own header
-            if any(token in description.lower() for token in _UNINTERESTING):
+            lowered = description.lower()
+            if any(token in lowered for token in _UNINTERESTING):
                 continue
+            if any(token in lowered for token in inherent):
+                continue  # structural to this container, not embedded content
 
             corroborated = offset in known
             findings.append(

@@ -4,9 +4,14 @@ Scoring logic scattered through analyzers is how a tool ends up with a verdict
 nobody can explain. The whole policy is the table below.
 
     CONFIRMED   a high-severity finding whose payload was extracted and validated
-    SUSPICIOUS  a high-severity finding, or two or more medium ones
+    SUSPICIOUS  a high-severity finding, or two or more corroborated medium ones
     NOTABLE     one medium finding, or three or more low ones
     CLEAN       nothing above informational
+
+Confidence gates escalation to SUSPICIOUS: only findings at LIKELY or better
+count toward the "two mediums" rule. Tools such as zsteg emit a line per
+bit-plane combination, and a pile of POSSIBLE-confidence leads is a reason to
+look, not grounds for calling a file suspicious.
 
 A verdict never travels without its coverage: `CLEAN` from six of thirteen
 analyzers is a different claim from `CLEAN` from thirteen of thirteen, and the
@@ -48,9 +53,11 @@ def compute_verdict(findings: Iterable[Finding]) -> Verdict:
     medium = [f for f in findings if f.severity is Severity.MEDIUM]
     low = [f for f in findings if f.severity is Severity.LOW]
 
+    corroborated_medium = [f for f in medium if f.confidence >= Confidence.LIKELY]
+
     if any(f.confidence is Confidence.CONFIRMED for f in high):
         return Verdict.CONFIRMED
-    if high or len(medium) >= 2:
+    if high or len(corroborated_medium) >= 2:
         return Verdict.SUSPICIOUS
     if medium or len(low) >= 3:
         return Verdict.NOTABLE

@@ -88,3 +88,18 @@ def test_status_never_silently_defaults_to_ran():
     assert AnalyzerResult.skipped("x", "r").status is Status.SKIPPED
     assert AnalyzerResult.errored("x", "r").status is Status.ERROR
     assert AnalyzerResult.ran("x").status is Status.RAN
+
+
+def test_many_possible_leads_do_not_reach_suspicious():
+    """Regression: confidence gates escalation.
+
+    zsteg emits a line per bit-plane combination. Twenty POSSIBLE-confidence
+    leads are a reason to look, not grounds for calling a file suspicious.
+    """
+    leads = [finding(Severity.MEDIUM, Confidence.POSSIBLE) for _ in range(20)]
+    assert compute_verdict(leads) is Verdict.NOTABLE
+
+
+def test_two_corroborated_mediums_still_reach_suspicious():
+    corroborated = [finding(Severity.MEDIUM, Confidence.LIKELY) for _ in range(2)]
+    assert compute_verdict(corroborated) is Verdict.SUSPICIOUS
