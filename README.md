@@ -1,5 +1,6 @@
 # StegoScan
 
+[![tests](https://github.com/HA5ANT/StegoScan/actions/workflows/tests.yml/badge.svg)](https://github.com/HA5ANT/StegoScan/actions/workflows/tests.yml)
 [![Steganography Analysis](https://img.shields.io/badge/Steganography-Analysis-blue)]()
 [![Language: Python](https://img.shields.io/badge/Language-Python%203.9%2B-green)]()
 [![Dependencies: none](https://img.shields.io/badge/Runtime%20deps-none-brightgreen)]()
@@ -37,7 +38,7 @@ There is nothing to install. StegoScan is pure Python standard library:
 ```bash
 git clone https://github.com/HA5ANT/StegoScan.git
 cd StegoScan
-python3 -m stegoscan --help
+python3 -m stegoscan --help      # or: python3 stegoscan --help
 ```
 
 No `pip install`, no virtualenv, no network. That is deliberate — the tool has to run in
@@ -71,7 +72,9 @@ docker build -t stegoscan -f docker/Dockerfile .
 docker run --rm -v "$PWD:/evidence:ro" -v "$PWD/out:/out" stegoscan /evidence/target.jpg
 ```
 
-Evidence is mounted read-only; artifacts land in `/out`.
+Evidence is mounted read-only, artifacts land in `/out`, and the container runs
+unprivileged. Note: the image definition has not yet been built and run in CI, so treat
+it as unverified until you have built it once yourself.
 
 ## Usage
 

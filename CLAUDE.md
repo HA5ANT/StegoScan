@@ -15,15 +15,20 @@ before making architectural changes; the constraints below are there for stated 
 ## Commands
 
 ```bash
-python3 -m pytest                      # full suite (~124 tests, no external tools needed)
+python3 -m pytest                      # full suite (~142 tests, no external tools needed)
 python3 -m pytest tests/test_bulk.py   # one file
 python3 -m pytest -k appended          # one topic
-python3 -m stegoscan target.jpg        # run it
+python3 -m stegoscan target.jpg        # run it (python3 stegoscan works too)
 python3 -m stegoscan --list-analyzers  # registered analyzers and their requirements
 docker build -t stegoscan -f docker/Dockerfile .
 ```
 
-There is no linter or CI configured. Tests are the quality gate.
+CI (`.github/workflows/tests.yml`) runs the suite on Python 3.9–3.13, smoke-tests both
+invocation forms, asserts `meme.jpg` still yields its known verdict, and fails the build
+if a runtime dependency is ever added. There is no linter. Tests are the quality gate.
+
+The Docker image has never been built in this environment — treat it as unverified until
+someone runs that `docker build`.
 
 ## Non-negotiable constraints
 
