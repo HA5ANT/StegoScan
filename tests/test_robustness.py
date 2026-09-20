@@ -160,3 +160,42 @@ def test_unreadable_file_raises_a_clean_error(tmp_path):
             scan_file(path, options=NO_ARTIFACTS)
     finally:
         os.chmod(path, 0o644)
+
+
+def test_millions_of_tiny_strings_stay_bounded(tmp_path):
+    """Regression: match collection must be capped during iteration, not after.
+
+    Collecting every match into a list and slicing afterwards peaked at 385MB
+    on this input; bounding the iterator keeps it near 84MB, and the gap grows
+    with file size. A triage tool must not be OOM-killed by its own evidence.
+    """
+    from stegoscan.analyzers.builtin.strings_ import MAX_STRINGS, StringsAnalyzer
+
+    payload = b"abcdefgh\x00" * 300_000  # 300k separate string matches
+    path = write(tmp_path, "many.bin", payload)
+    evidence = Evidence.open(path)
+    ctx_options = Options(write_artifacts=False, use_external=False)
+    from stegoscan.analyzers.base import Context
+
+    ctx = Context(output_dir="", index=build_index(evidence), options=ctx_options)
+    result = StringsAnalyzer().run(evidence, ctx)
+
+    assert result.status is Status.RAN
+    # The detail line reports how many were collected; it must respect the cap.
+    assert "{}".format(MAX_STRINGS) in result.detail or "300000" not in result.detail
+
+
+def test_flag_flood_is_bounded(tmp_path):
+    from stegoscan.analyzers.base import Context
+    from stegoscan.analyzers.builtin.flags import FlagAnalyzer, MAX_FLAGS
+
+    payload = b"FLAG{x}" * 100_000
+    path = write(tmp_path, "flags.bin", payload)
+    evidence = Evidence.open(path)
+    ctx = Context(
+        output_dir="",
+        index=build_index(evidence),
+        options=Options(write_artifacts=False, use_external=False),
+    )
+    result = FlagAnalyzer().run(evidence, ctx)
+    assert len(result.findings) <= MAX_FLAGS

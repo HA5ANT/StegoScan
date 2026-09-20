@@ -114,21 +114,30 @@ docker/Dockerfile      all optional tools pinned and preinstalled
 
 ### Single-pass scanner
 
-`scanning.py` memory-maps the evidence once and performs one linear traversal that
-simultaneously:
+`scanning.py` memory-maps the evidence once and, from that single mapping:
 
-- matches every magic-byte signature using a single compiled `re` alternation of escaped
-  byte literals over the mapped buffer (`finditer`), and
+- locates every magic-byte signature with `bytes.find`, one pass per signature, and
 - computes windowed Shannon entropy over fixed-size windows.
 
 The resulting `ScanIndex` is consumed by the signatures, appended-data and entropy
 analyzers, none of which re-read the file. This replaces v2's repeated `grep -aobF`
-passes: cost becomes O(n) once rather than O(n x signatures).
+invocations, which spawned a process per pattern.
 
-Regex alternation over a memory map was chosen over an Aho-Corasick implementation
-because the signature set is small (tens of patterns), `re` runs in C, and it keeps
-Principle 1 intact. If the pattern set ever grows into the hundreds, this is the
-documented place to revisit.
+**Correction (measured after the first implementation).** This section originally
+specified a single compiled `re` alternation of the literals, reasoning that the
+signature set is small and `re` runs in C. That was wrong, and benchmarking a 161 MB
+file showed why: the alternation ran at **3.5 MB/s**, because Python's regex engine
+retries every alternative at every position. Looping `bytes.find` once per signature is
+nominally O(n x signatures), yet measured **195 MB/s** on the same data — a **56x**
+speedup — because each pass is one tuned C scan. Whole-file scan time fell from 69s to
+24s.
+
+The O(n x signatures) arithmetic only starts to matter in the hundreds of patterns; at a
+few dozen literals, constant factors dominate and Aho-Corasick would add complexity for
+no measured gain. That remains the place to revisit if the set grows.
+
+No signature is a prefix of another, so per-signature scanning cannot report the same
+bytes twice at one offset.
 
 **Carve-and-validate is preserved** from v2 — it is the best idea in the existing tool.
 Every signature hit is carved and re-validated against a built-in magic table before

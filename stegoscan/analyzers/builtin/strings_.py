@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from itertools import islice
 from typing import List
 
 from ...model import Confidence, Severity
@@ -10,6 +11,7 @@ from ...registry import register
 from ..base import Analyzer, Context, excerpt_bytes
 
 MAX_STRINGS = 200_000
+MAX_MATCHES = 20_000
 
 _URL = re.compile(rb"\b(?:https?|ftp|sftp|smb)://[^\s\"'<>]{4,300}")
 _EMAIL = re.compile(rb"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}\b")
@@ -43,16 +45,20 @@ class StringsAnalyzer(Analyzer):
         artifacts: List[str] = []
 
         with evidence.map() as buf:
-            ascii_strings = [m.group() for m in ascii_pattern.finditer(buf)][:MAX_STRINGS]
+            # islice, not a list comprehension then a slice: on a large text-heavy
+            # carrier the comprehension materialises every match before the cap
+            # applies, which is how a triage tool runs a machine out of memory.
+            ascii_strings = [m.group() for m in islice(ascii_pattern.finditer(buf), MAX_STRINGS)]
             utf16_strings = [
-                m.group().replace(b"\x00", b"") for m in utf16_pattern.finditer(buf)
-            ][:MAX_STRINGS]
-            urls = sorted({m.group() for m in _URL.finditer(buf)})
-            emails = sorted({m.group() for m in _EMAIL.finditer(buf)})
+                m.group().replace(b"\x00", b"")
+                for m in islice(utf16_pattern.finditer(buf), MAX_STRINGS)
+            ]
+            urls = sorted({m.group() for m in islice(_URL.finditer(buf), MAX_MATCHES)})
+            emails = sorted({m.group() for m in islice(_EMAIL.finditer(buf), MAX_MATCHES)})
             secrets = [
                 (label, severity, m.start(), m.group())
                 for pattern, label, severity in _SECRETS
-                for m in re.finditer(pattern, buf)
+                for m in islice(re.finditer(pattern, buf), MAX_MATCHES)
             ]
 
         all_strings = ascii_strings + utf16_strings

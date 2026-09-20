@@ -7,12 +7,14 @@ CONFIRMED and outrank everything else in the report.
 from __future__ import annotations
 
 import re
+from itertools import islice
 
 from ...model import Confidence, Severity
 from ...registry import register
 from ..base import Analyzer, Context, excerpt_bytes
 
 MAX_FLAGS = 25
+MAX_MATCHES = 20_000
 
 # Named prefixes first (high precision), then the generic wrapper shape.
 _NAMED = re.compile(
@@ -34,9 +36,13 @@ class FlagAnalyzer(Analyzer):
         named = []
         generic = []
         with evidence.map() as buf:
-            named = [(m.start(), m.group()) for m in _NAMED.finditer(buf)]
+            # Bounded: a crafted file can contain millions of flag-shaped tokens,
+            # and only the first handful are ever reported anyway.
+            named = [(m.start(), m.group()) for m in islice(_NAMED.finditer(buf), MAX_MATCHES)]
             if not named:
-                generic = [(m.start(), m.group()) for m in _GENERIC.finditer(buf)]
+                generic = [
+                    (m.start(), m.group()) for m in islice(_GENERIC.finditer(buf), MAX_MATCHES)
+                ]
 
         findings = []
         seen = set()
