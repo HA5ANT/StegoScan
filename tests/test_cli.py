@@ -161,3 +161,28 @@ def test_directory_target_runs_bulk_triage(tmp_path):
     assert "2 file(s) scanned" in out
     assert "CONFIRMED" in out
     assert completed.returncode == 30
+
+
+# --- builtin-only mode ------------------------------------------------------
+
+
+def test_no_external_skips_tools_and_lowers_coverage(jpeg_with_appended_zip):
+    """Turning tools off must lower coverage visibly, never silently."""
+    completed = run_cli(
+        jpeg_with_appended_zip, "--no-external", "--no-artifacts", "--print", "json"
+    )
+    payload = json.loads(completed.stdout.decode())
+
+    external = [a for a in payload["analyzers"] if a["status"] == "skipped"]
+    assert external, "external analyzers should be reported as skipped"
+    assert any("--no-external" in a["reason"] for a in external)
+    assert payload["coverage"]["complete"] is False
+    # Detection itself is builtin, so the payload is still found.
+    assert payload["verdict"] == "CONFIRMED"
+
+
+def test_no_external_still_detects_builtin_findings(jpeg_with_appended_zip):
+    with_tools = run_cli(jpeg_with_appended_zip, "--no-artifacts", "--print", "json")
+    without = run_cli(jpeg_with_appended_zip, "--no-external", "--no-artifacts", "--print", "json")
+    assert json.loads(with_tools.stdout.decode())["verdict"] == "CONFIRMED"
+    assert json.loads(without.stdout.decode())["verdict"] == "CONFIRMED"

@@ -27,6 +27,10 @@ class Options:
     entropy_threshold: float = 7.5
     max_findings_per_analyzer: int = 50
     write_artifacts: bool = True
+    # Builtin-only mode: no subprocesses at all. Faster, fully deterministic,
+    # and the honest choice when you need a scan that depends on nothing but
+    # this package. Disabled analyzers are still reported as skipped.
+    use_external: bool = True
 
 
 @dataclass

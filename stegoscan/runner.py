@@ -53,7 +53,9 @@ def scan_file(
 
     applicable = registry.analyzers_for(evidence.carrier)
     required_binaries = {binary for analyzer in applicable for binary in analyzer.requires}
-    available = tools.discover(required_binaries)
+    # Skip discovery entirely in builtin-only mode: looking up tools we will not
+    # run costs a subprocess each, which is the whole point of the mode.
+    available = tools.discover(required_binaries) if options.use_external else {}
 
     ctx = Context(
         output_dir=output_dir,
@@ -83,6 +85,8 @@ def scan_file(
 
 
 def _run_one(analyzer, evidence, ctx: Context, available: Dict[str, tools.ToolInfo]) -> AnalyzerResult:
+    if analyzer.requires and not ctx.options.use_external:
+        return AnalyzerResult.skipped(analyzer.name, "external tools disabled (--no-external)")
     missing = [name for name in analyzer.requires if not available.get(name, tools.ToolInfo(name, None)).available]
     if missing:
         return AnalyzerResult.skipped(

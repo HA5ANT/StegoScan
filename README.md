@@ -84,6 +84,7 @@ python3 -m stegoscan *.jpg                         # scan several
 python3 -m stegoscan ./acquisition -r -j 8         # recursive bulk triage, 8 workers
 python3 -m stegoscan target.jpg --print json       # JSON to stdout for a pipeline
 python3 -m stegoscan target.jpg --no-artifacts     # analyse, write nothing to disk
+python3 -m stegoscan target.jpg --no-external      # builtin analyzers only, no subprocesses
 python3 -m stegoscan target.jpg -p hunter2         # try a steghide password
 python3 -m stegoscan target.jpg --aggressive -w rockyou.txt   # stegseek attack
 python3 -m stegoscan --list-analyzers              # what runs, and what each needs
@@ -141,6 +142,10 @@ exit codes let CI and pipelines branch without parsing output.
 **With external tools:** binwalk (cross-referenced against the builtin scanner, so
 corroboration is distinguished from a new lead), steghide, stegseek, zsteg, stegdetect
 and exiftool.
+
+`--no-external` turns all of those off and runs builtin analyzers only — no subprocesses,
+so it is faster and fully deterministic. Coverage drops visibly to say so, which is the
+point: disabling checks changes what a clean verdict is allowed to mean.
 
 ## Evidence handling
 

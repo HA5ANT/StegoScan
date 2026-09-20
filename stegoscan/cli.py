@@ -130,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     external = parser.add_argument_group("external tools")
+    external.add_argument(
+        "--no-external",
+        action="store_true",
+        help="run builtin analyzers only, no subprocesses (faster, fully deterministic)",
+    )
     external.add_argument("-p", "--password", metavar="PW", help="password to try with steghide")
     external.add_argument("-w", "--wordlist", metavar="FILE", help="wordlist for stegseek")
     external.add_argument(
@@ -166,6 +171,7 @@ def options_from_args(args: argparse.Namespace) -> Options:
         aggressive=args.aggressive,
         entropy_threshold=args.entropy_threshold,
         write_artifacts=not args.no_artifacts,
+        use_external=not args.no_external,
     )
 
 

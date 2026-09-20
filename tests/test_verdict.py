@@ -103,3 +103,28 @@ def test_many_possible_leads_do_not_reach_suspicious():
 def test_two_corroborated_mediums_still_reach_suspicious():
     corroborated = [finding(Severity.MEDIUM, Confidence.LIKELY) for _ in range(2)]
     assert compute_verdict(corroborated) is Verdict.SUSPICIOUS
+
+
+def test_coverage_groups_analyzers_sharing_a_reason():
+    """Six analyzers skipped for one reason should read as one clause.
+
+    The coverage line is the most-read sentence in the report; repeating an
+    identical parenthetical six times makes it unreadable.
+    """
+    results = [
+        AnalyzerResult.skipped(name, "external tools disabled")
+        for name in ("binwalk", "exiftool", "steghide")
+    ]
+    summary = compute_coverage(results).summary()
+    assert "binwalk, exiftool, steghide (external tools disabled)" in summary
+    assert summary.count("external tools disabled") == 1
+
+
+def test_coverage_keeps_distinct_reasons_separate():
+    results = [
+        AnalyzerResult.skipped("steghide", "steghide not installed"),
+        AnalyzerResult.skipped("zsteg", "zsteg not installed"),
+    ]
+    summary = compute_coverage(results).summary()
+    assert "steghide (steghide not installed)" in summary
+    assert "zsteg (zsteg not installed)" in summary

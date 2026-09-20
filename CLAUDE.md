@@ -15,11 +15,12 @@ before making architectural changes; the constraints below are there for stated 
 ## Commands
 
 ```bash
-python3 -m pytest                      # full suite (~142 tests, no external tools needed)
+python3 -m pytest                      # full suite (~176 tests, no external tools needed)
 python3 -m pytest tests/test_bulk.py   # one file
 python3 -m pytest -k appended          # one topic
 python3 -m stegoscan target.jpg        # run it (python3 stegoscan works too)
 python3 -m stegoscan --list-analyzers  # registered analyzers and their requirements
+python3 -m stegoscan t.jpg --no-external  # builtin-only: no subprocesses, deterministic
 docker build -t stegoscan -f docker/Dockerfile .
 ```
 

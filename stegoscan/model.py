@@ -206,6 +206,20 @@ class AnalyzerResult:
         }
 
 
+def _group_by_reason(reasons: Dict[str, str]) -> str:
+    """Render analyzer:reason pairs grouped by shared reason.
+
+    Six analyzers skipped for the same reason should read as one clause, not
+    six. The coverage line is the most-read sentence in the whole report.
+    """
+    grouped: Dict[str, List[str]] = {}
+    for name, reason in sorted(reasons.items()):
+        grouped.setdefault(reason, []).append(name)
+    return ", ".join(
+        "{} ({})".format(", ".join(names), reason) for reason, names in sorted(grouped.items())
+    )
+
+
 @dataclass
 class Coverage:
     """How much of the intended examination actually happened."""
@@ -236,21 +250,9 @@ class Coverage:
             return base
         parts = []
         if self.skipped_reasons:
-            parts.append(
-                "skipped: "
-                + ", ".join(
-                    "{} ({})".format(name, reason)
-                    for name, reason in sorted(self.skipped_reasons.items())
-                )
-            )
+            parts.append("skipped: " + _group_by_reason(self.skipped_reasons))
         if self.error_reasons:
-            parts.append(
-                "errors: "
-                + ", ".join(
-                    "{} ({})".format(name, reason)
-                    for name, reason in sorted(self.error_reasons.items())
-                )
-            )
+            parts.append("errors: " + _group_by_reason(self.error_reasons))
         return "{} — {}".format(base, "; ".join(parts))
 
     def to_dict(self) -> Dict[str, Any]:
