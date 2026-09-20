@@ -230,4 +230,4 @@ issue with the file if you can share it.
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
