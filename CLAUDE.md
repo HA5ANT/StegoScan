@@ -15,7 +15,7 @@ before making architectural changes; the constraints below are there for stated 
 ## Commands
 
 ```bash
-python3 -m pytest                      # full suite (~176 tests, no external tools needed)
+python3 -m pytest                      # full suite; needs no external tools
 python3 -m pytest tests/test_bulk.py   # one file
 python3 -m pytest -k appended          # one topic
 python3 -m stegoscan target.jpg        # run it (python3 stegoscan works too)
@@ -59,8 +59,9 @@ Data flows in one direction: `Evidence` → `ScanIndex` → analyzers → `Analy
   `ScanReport` is canonical; all output is a rendering of it.
 - `evidence.py` — read-only file handle, digests, carrier detection from magic bytes
   (extension is deliberately ignored: it's an assertion, not evidence).
-- `scanning.py` — **one** mmap traversal producing a `ScanIndex`: all signature matches
-  via a single compiled regex alternation, plus windowed entropy. Analyzers consume this
+- `scanning.py` — **one** mmap producing a `ScanIndex`: signature matches via
+  `bytes.find` per signature (a regex alternation measured 56x slower — see the spec),
+  plus windowed entropy. Analyzers consume this
   rather than re-reading the file. Also holds the per-format validators.
 - `registry.py` — `@register` decorator; in-tree registration only. Import order in
   `analyzers/__init__.py` is report order. It cannot import the analyzers package at
